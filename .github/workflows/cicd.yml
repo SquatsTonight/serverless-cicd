@@ -1,0 +1,72 @@
+name: CICD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PROVIDER: alibaba
+  REGION: cn-hongkong
+  PROD_SERVICE_NAME: ServerlessCiCdProject
+  TEST_SERVICE_NAME: ServerlessCiCdProject-Test
+  PROD_MY_FUNCTION_NAME: serverless_cicd_demo_python3_http
+  TEST_MY_FUNCTION_NAME: serverless_cicd_demo_python3_http-${{ github.run_id }}
+
+jobs:
+  cicd:
+    name: Serverless CI/CD
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Initializing Serverless-Devs
+      uses: git-qfzhang/Serverless-Devs-Initialization-Action@main
+      with:
+        provider: ${{ env.PROVIDER }}
+        access_key_id: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+        access_key_secret: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        account_id: ${{ secrets.ALIYUN_ACCOUNT_ID }}
+
+    - name: Setup nodejs10
+      uses: actions/setup-node@v1
+      with:
+        node-version: '10'
+
+    - name: Install dependencies
+      run: sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.PROD_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.PROD_MY_FUNCTION_NAME }} s install docker
+      working-directory: ./src
+
+    - name: Unit test
+      run: sudo npm test
+      working-directory: ./src
+
+    - name: Deploy test
+      run: |
+        sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.TEST_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.TEST_MY_FUNCTION_NAME }} s deploy | tee ./${{ env.TEST_SERVICE_NAME }}-${{ env.TEST_MY_FUNCTION_NAME }}.log
+        cat ./${{ env.TEST_SERVICE_NAME }}-${{ env.TEST_MY_FUNCTION_NAME }}.log | grep 'EndPoint:' | sed -e 's/.*EndPoint: //' | sed -e 's/^/ENDPOINT=/' > ./.env
+        rm ./${{ env.TEST_SERVICE_NAME }}-${{ env.TEST_MY_FUNCTION_NAME }}.log
+      working-directory: ./src
+
+    - name: E2E test
+      run: |
+        sudo -s
+        source ./.env
+        ENDPOINT="$ENDPOINT" npm run e2e:test
+      working-directory: ./src
+
+    - name: Remove test
+      run: |
+        sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.TEST_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.TEST_MY_FUNCTION_NAME }} s remove trigger
+        sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.TEST_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.TEST_MY_FUNCTION_NAME }} s remove function
+      working-directory: ./src
+
+    - name: Deploy prod
+      run: sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.PROD_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.PROD_MY_FUNCTION_NAME }} s deploy
+      working-directory: ./src
+
+    - name: Publish
+      run: sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.PROD_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.PROD_MY_FUNCTION_NAME }} s publish version -d "description"
+      working-directory: ./src

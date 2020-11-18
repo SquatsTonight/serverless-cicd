@@ -1,0 +1,22 @@
+{
+  "name": "tz-time",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "moment": "^2.24.0",
+    "moment-timezone": "^0.5.26"
+  },
+  "devDependencies": {
+    "dotenv": "^8.2.0",
+    "jest": "^24.9.0",
+    "request": "^2.88.0"
+  },
+  "scripts": {
+    "test": "jest",
+    "integration:test": "jest -c jest.config.integration.js",
+    "e2e:test": "jest -c jest.config.e2e.js"
+  },
+  "author": "",
+  "license": "ISC"
+}
