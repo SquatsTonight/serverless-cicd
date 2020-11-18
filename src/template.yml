@@ -1,0 +1,26 @@
+Global:
+  ServiceDefinition:
+    Name: ${Env(SERVICE_NAME)}
+    Description: This is a serivce
+  FunctionDefinition:
+      Name: ${Env(MY_FUNCTION_NAME)}
+      Description: This is a http trigger function of python3
+      CodeUri: ./
+      Handler: index.handler
+      MemorySize: 128
+      Runtime: nodejs10
+      Timeout: 60
+      Triggers:
+        - Name: TriggerNameHttp
+          Type: HTTP
+          Parameters:
+            AuthType: ANONYMOUS
+            Methods:
+              - GET
+ServerlessCiCdDemo:
+  Component: fc
+  Provider: ${Env(PROVIDER)}
+  Properties:
+    Region: ${Env(REGION)}
+    Service: ${Global.ServiceDefinition}
+    Function: ${Global.FunctionDefinition}
