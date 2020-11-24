@@ -1,4 +1,4 @@
-name: CICD
+name: serverless CI/CD
 
 on:
   push:
@@ -11,62 +11,207 @@ env:
   REGION: cn-hongkong
   PROD_SERVICE_NAME: ServerlessCiCdProject
   TEST_SERVICE_NAME: ServerlessCiCdProject-Test
-  PROD_MY_FUNCTION_NAME: serverless_cicd_demo_python3_http
-  TEST_MY_FUNCTION_NAME: serverless_cicd_demo_python3_http-${{ github.run_id }}
+  PROD_NODEJS_FUNCTION_NAME: serverless_cicd_demo_nodejs10_http
+  TEST_NODEJS_FUNCTION_NAME: serverless_cicd_demo_nodejs10_http-${{ github.run_id }}
+  PROD_JAVA_FUNCTION_NAME: serverless_cicd_demo_java8_event
+  TEST_JAVA_FUNCTION_NAME: serverless_cicd_demo_java8_event-${{ github.run_id }}
+  NODEJS_PROJECT_NAME: NodejsProject
+  JAVA_PROJECT_NAME: JavaProject
+  NODEJS_CODE_URI: ./src/fc-nodejs10-http
+  JAVA_CODE_URI: ./src/fc-java8-event
+  FC_CODE_URI: ./src
 
 jobs:
-  cicd:
-    name: Serverless CI/CD
+  nodejs-cicd-job:
+    name: Serverless CI/CD for FC nodejs http trigger function
     runs-on: ubuntu-latest
+    outputs:
+      deploy-test-logs: ${{ steps.deploy-test.outputs.deploy-logs }}
     steps:
     - name: Checkout
       uses: actions/checkout@v2
 
     - name: Initializing Serverless-Devs
-      uses: git-qfzhang/Serverless-Devs-Initialization-Action@main
+      uses: Serverless-Devs/serverless-devs-initialization-action@main
       with:
         provider: ${{ env.PROVIDER }}
-        access_key_id: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-        access_key_secret: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-        account_id: ${{ secrets.ALIYUN_ACCOUNT_ID }}
+        AccessKeyID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+        AccessKeySecret: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        AccountID: ${{ secrets.ALIYUN_ACCOUNT_ID }}
 
     - name: Setup nodejs10
       uses: actions/setup-node@v1
       with:
         node-version: '10'
 
-    - name: Install dependencies
-      run: sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.PROD_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.PROD_MY_FUNCTION_NAME }} s install docker
-      working-directory: ./src
+    - name: Building
+      uses: git-qfzhang/alibaba-fc-build-action@dev
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.PROD_SERVICE_NAME }}
+        NODEJS_FUNCTION_NAME: ${{ env.PROD_NODEJS_FUNCTION_NAME }}
+      with:
+        working_directory: ${{ env.FC_CODE_URI }}
+        projects: ${{ env.NODEJS_PROJECT_NAME }}
 
     - name: Unit test
-      run: sudo npm test
-      working-directory: ./src
+      run: ( cd ${{ env.NODEJS_CODE_URI }} && sudo npm test )
 
-    - name: Deploy test
-      run: |
-        sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.TEST_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.TEST_MY_FUNCTION_NAME }} s deploy | tee ./${{ env.TEST_SERVICE_NAME }}-${{ env.TEST_MY_FUNCTION_NAME }}.log
-        cat ./${{ env.TEST_SERVICE_NAME }}-${{ env.TEST_MY_FUNCTION_NAME }}.log | grep 'EndPoint:' | sed -e 's/.*EndPoint: //' | sed -e 's/^/ENDPOINT=/' > ./.env
-        rm ./${{ env.TEST_SERVICE_NAME }}-${{ env.TEST_MY_FUNCTION_NAME }}.log
-      working-directory: ./src
+    - id: deploy-test
+      name: Deploying test
+      uses: git-qfzhang/alibaba-fc-deploy-action@dev
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.TEST_SERVICE_NAME }}
+        NODEJS_FUNCTION_NAME: ${{ env.TEST_NODEJS_FUNCTION_NAME }}
+      with: 
+        working_directory: ${{ env.FC_CODE_URI }}
+        projects: ${{ env.NODEJS_PROJECT_NAME }}
+      
+    - name: Extracting endpoint to GITHUB_ENV
+      run: | 
+        statement=$( echo ${{ steps.deploy-test.outputs.deploy-logs }} | grep 'EndPoint:' | sed -e 's/.*EndPoint: //g' | sed -e 's/ Trigger:.*//g' | sed -e 's/^/ENDPOINT=/g' )
+        echo "$statement" >> $GITHUB_ENV
 
     - name: E2E test
-      run: |
-        sudo -s
-        source ./.env
-        ENDPOINT="$ENDPOINT" npm run e2e:test
-      working-directory: ./src
+      run: ( cd ${{ env.NODEJS_CODE_URI }} && sudo --preserve-env npm run e2e:test )
 
-    - name: Remove test
+    - name: Removing test
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.TEST_SERVICE_NAME }}
+        NODEJS_FUNCTION_NAME: ${{ env.TEST_NODEJS_FUNCTION_NAME }}
       run: |
-        sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.TEST_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.TEST_MY_FUNCTION_NAME }} s remove trigger
-        sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.TEST_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.TEST_MY_FUNCTION_NAME }} s remove function
-      working-directory: ./src
+        sudo --preserve-env s ${{ env.NODEJS_PROJECT_NAME }} remove trigger
+        sudo --preserve-env s ${{ env.NODEJS_PROJECT_NAME }} remove function
+      working-directory: ${{ env.FC_CODE_URI }}
 
-    - name: Deploy prod
-      run: sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.PROD_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.PROD_MY_FUNCTION_NAME }} s deploy
-      working-directory: ./src
+    - name: Deploying prod
+      uses: git-qfzhang/alibaba-fc-deploy-action@dev
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.PROD_SERVICE_NAME }}
+        NODEJS_FUNCTION_NAME: ${{ env.PROD_NODEJS_FUNCTION_NAME }}
+      with: 
+        working_directory: ${{ env.FC_CODE_URI }}
+        projects: ${{ env.NODEJS_PROJECT_NAME }}
 
     - name: Publish
-      run: sudo PROVIDER=${{ env.PROVIDER }} REGION=${{ env.REGION }} SERVICE_NAME=${{ env.PROD_SERVICE_NAME }} MY_FUNCTION_NAME=${{ env.PROD_MY_FUNCTION_NAME }} s publish version -d "description"
-      working-directory: ./src
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.PROD_SERVICE_NAME }}
+        NODEJS_FUNCTION_NAME: ${{ env.PROD_NODEJS_FUNCTION_NAME }}
+      run: sudo --preserve-env s ${{ env.NODEJS_PROJECT_NAME }} publish version -d "description"
+      working-directory: ${{ env.FC_CODE_URI }}
+
+  java-cicd-job:
+    name: Serverless CI/CD for FC java event function
+    runs-on: ubuntu-latest
+    outputs:
+      deploy-test-logs: ${{ steps.deploy-test.outputs.deploy-logs }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Initializing Serverless-Devs
+      uses: Serverless-Devs/serverless-devs-initialization-action@main
+      with:
+        provider: ${{ env.PROVIDER }}
+        AccessKeyID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+        AccessKeySecret: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        AccountID: ${{ secrets.ALIYUN_ACCOUNT_ID }}
+
+    - name: Set up JDK 1.8
+      uses: actions/setup-java@v1
+      with:
+        java-version: 1.8
+
+    - name: Unit test
+      run: mvn test
+      working-directory: ${{ env.JAVA_CODE_URI }}
+
+    - name: Building test
+      uses: git-qfzhang/alibaba-fc-build-action@dev
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.TEST_SERVICE_NAME }}
+        JAVA_FUNCTION_NAME: ${{ env.TEST_JAVA_FUNCTION_NAME }}
+      with:
+        working_directory: ${{ env.FC_CODE_URI }}
+        projects: ${{ env.JAVA_PROJECT_NAME }}
+
+    - id: deploy-test
+      name: Deploying test
+      uses: git-qfzhang/alibaba-fc-deploy-action@dev
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.TEST_SERVICE_NAME }}
+        JAVA_FUNCTION_NAME: ${{ env.TEST_JAVA_FUNCTION_NAME }}
+      with: 
+        working_directory: ${{ env.FC_CODE_URI }}
+        projects: ${{ env.JAVA_PROJECT_NAME }}
+    
+    - name: Setup nodejs10
+      uses: actions/setup-node@v1
+      with:
+        node-version: '10'
+
+    - name: E2E test
+      env: 
+        SERVICE: ${{ env.TEST_SERVICE_NAME }}
+        FUNCTION: ${{ env.TEST_JAVA_FUNCTION_NAME }}
+        ACCOUNT_ID: ${{ secrets.ALIYUN_ACCOUNT_ID }}
+        ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+        ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+      run: |
+        cd e2e
+        npm install
+        npm run e2e:test
+      working-directory: ${{ env.JAVA_CODE_URI }}
+
+    - name: Removing test
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.TEST_SERVICE_NAME }}
+        JAVA_FUNCTION_NAME: ${{ env.TEST_JAVA_FUNCTION_NAME }}
+      run: sudo --preserve-env s ${{ env.JAVA_PROJECT_NAME }} remove function
+      working-directory: ${{ env.FC_CODE_URI }}
+
+    - name: Building prod
+      uses: git-qfzhang/alibaba-fc-build-action@dev
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.PROD_SERVICE_NAME }}
+        JAVA_FUNCTION_NAME: ${{ env.PROD_JAVA_FUNCTION_NAME }}
+      with:
+        working_directory: ${{ env.FC_CODE_URI }}
+        projects: ${{ env.JAVA_PROJECT_NAME }}
+
+    - name: Deploying prod
+      uses: git-qfzhang/alibaba-fc-deploy-action@dev
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.PROD_SERVICE_NAME }}
+        JAVA_FUNCTION_NAME: ${{ env.PROD_JAVA_FUNCTION_NAME }}
+      with: 
+        working_directory: ${{ env.FC_CODE_URI }}
+        projects: ${{ env.JAVA_PROJECT_NAME }}
+
+    - name: Publish
+      env:
+        PROVIDER: ${{ env.PROVIDER }}
+        REGION: ${{ env.REGION }}
+        SERVICE_NAME: ${{ env.PROD_SERVICE_NAME }}
+        JAVA_FUNCTION_NAME: ${{ env.PROD_JAVA_FUNCTION_NAME }}
+      run: sudo --preserve-env s ${{ env.JAVA_PROJECT_NAME }} publish version -d "description"
+      working-directory: ${{ env.FC_CODE_URI }}

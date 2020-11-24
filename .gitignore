@@ -3,3 +3,5 @@ template.*.yml
 *.log
 .env
 .fun
+.s
+.DS_Store
