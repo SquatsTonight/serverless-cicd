@@ -2,10 +2,17 @@ Global:
   ServiceDefinition:
     Name: ${Env(SERVICE_NAME)}
     Description: This is a serivce
-  FunctionDefinition:
-      Name: ${Env(MY_FUNCTION_NAME)}
-      Description: This is a http trigger function of python3
-      CodeUri: ./
+
+NodejsProject:
+  Component: fc
+  Provider: ${Env(PROVIDER)}
+  Properties:
+    Region: ${Env(REGION)}
+    Service: ${Global.ServiceDefinition}
+    Function:
+      Name: ${Env(NODEJS_FUNCTION_NAME)}
+      Description: This is a http trigger function of Nodejs10
+      CodeUri: ./fc-nodejs10-http
       Handler: index.handler
       MemorySize: 128
       Runtime: nodejs10
@@ -17,10 +24,16 @@ Global:
             AuthType: ANONYMOUS
             Methods:
               - GET
-ServerlessCiCdDemo:
+
+JavaProject:
   Component: fc
   Provider: ${Env(PROVIDER)}
   Properties:
     Region: ${Env(REGION)}
     Service: ${Global.ServiceDefinition}
-    Function: ${Global.FunctionDefinition}
+    Function:
+      Name: ${Env(JAVA_FUNCTION_NAME)}
+      Description: This is a event function of java8
+      CodeUri: ./fc-java8-event
+      Handler: example.HelloFC::handleRequest
+      Runtime: java8
