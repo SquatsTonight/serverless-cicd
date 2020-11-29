@@ -20,8 +20,7 @@
     4. 部署发布
 
 ## 工作流程图
-
-![Alt text](images/serverless_cicd_flow.png?raw=true "Optional Title")
+![Alt text](https://img.alicdn.com/tfs/TB1Y1c73pT7gK0jSZFpXXaTkpXa-1032-730.png 'Optional Title')
 
 对于编译型 Runtime，例如 Java，首先需要构建出对应的交付物，构建的过程可以理解为，去函数代码目录查找特定的 manifest 文件（清单文件），然后根据这些 manifest 文件进行特定的构造、依赖下载、编译等操作。CI/CD 流程中需要构建两次，一次构建目标为测试环境，一次构建目标为生产环境。‘
 
